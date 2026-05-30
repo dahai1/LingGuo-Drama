@@ -4,6 +4,7 @@ import (
 	"spiritFruit/app/models"
 	"spiritFruit/app/models/projects"
 	"spiritFruit/app/requests"
+	"spiritFruit/pkg/auth"
 	"spiritFruit/pkg/database"
 	"spiritFruit/pkg/response"
 	"strconv"
@@ -61,10 +62,8 @@ func (ctrl *ProjectsController) buildSearchConditions(c *gin.Context) map[string
 	where := map[string]interface{}{}
 
 	// 归属用户ID(默认1)搜索
-
-	if adminId := strings.TrimSpace(c.Query("adminId")); adminId != "" {
-		where["admin_id"] = adminId
-	}
+	adminId := auth.CurrentAdmin(c)
+	where["admin_id"] = adminId
 
 	// 业务流水号搜索
 
