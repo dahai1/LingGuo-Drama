@@ -26,9 +26,18 @@
                 <div class="storyboard-panel">
                     <div class="panel-header">
                         <h3>分镜列表 ({{ storyboards.length }})</h3>
-                        <t-button theme="primary" variant="text" size="small" @click="handleAddStoryboard">
-                            <template #icon><t-icon name="add" /></template>新增
-                        </t-button>
+                        <t-space :size="4">
+                            <t-button theme="primary" variant="text" size="small" @click="handleAddStoryboard">
+                                <template #icon><t-icon name="add" /></template>新增
+                            </t-button>
+                            <t-button theme="default" variant="outline" size="small" :loading="exportMdLoading" @click="exportStoryboardsToMd">
+                                <template #icon><t-icon name="file-export" /></template>导出MD
+                            </t-button>
+                            <t-button theme="default" variant="outline" size="small" :loading="importMdLoading" @click="triggerMdImport">
+                                <template #icon><t-icon name="file-import" /></template>导入MD
+                            </t-button>
+                        </t-space>
+                        <input ref="mdFileInput" type="file" accept=".md" style="display:none" @change="handleMdImport" />
                     </div>
                     <div class="storyboard-list" v-if="storyboards.length > 0">
                         <div v-for="(shot, index) in storyboards" :key="shot.id" class="storyboard-item"
@@ -837,6 +846,7 @@ import { createSource, deleteSource } from '@/api/source'
 import { extractFramePromptTask, findTasks, generateImageByPromptTask, generateVideoTask, mergeVideoTask } from '@/api/tasks'
 import { createShotFrameImages, deleteShotFrameImages } from '@/api/shot_frame_image'
 import { getImageUrl } from '@/utils/format'
+import { parseShotMdContent } from '@/utils/shotMdParser'
 import { request } from '@/utils/request'
 
 // 组件
@@ -857,6 +867,9 @@ const project = ref<any>({})
 const currentScriptId = ref<number | null>(null)
 const storyboards = ref<any[]>([])
 const currentStoryboardId = ref<string | number | null>(null)
+const exportMdLoading = ref(false)
+const importMdLoading = ref(false)
+const mdFileInput = ref<HTMLInputElement | null>(null)
 const sceneList = ref<any[]>([])
 const availableCharacters = ref<any[]>([])
 const availableProps = ref<any[]>([])
@@ -895,7 +908,7 @@ const mainPlayerRef = ref<HTMLVideoElement | null>(null)
 // ================= 视频生成相关逻辑 =================
 const generatingVideo = ref(false)
 const selectedVideoModel = ref('doubao-seedance-1-5-pro-251215')
-const videoDuration = ref(5)
+const videoDuration = ref(6)
 const referenceMode = ref('single')
 const selectedVideoFrameType = ref('first')
 const generatedVideos = ref<any[]>([])
@@ -1491,6 +1504,146 @@ const addAllAssetsToTimeline = () => {
 
 const goBack = () => router.back()
 const loadData = () => { initData(); MessagePlugin.success('数据已刷新') }
+
+// 导出分镜列表为MD
+const exportStoryboardsToMd = () => {
+    const list = storyboards.value
+    if (!list || list.length === 0) {
+        MessagePlugin.warning('没有分镜数据可导出')
+        return
+    }
+    exportMdLoading.value = true
+    try {
+        const lines: string[] = []
+        const projectName = project.value?.title || '--'
+        lines.push(`# 分镜列表 - ${projectName}`)
+        lines.push('')
+        lines.push(`> 导出时间: ${new Date().toLocaleString()}　|　共 ${list.length} 个镜头`)
+        lines.push('')
+        lines.push('---')
+        lines.push('')
+
+        list.forEach((shot: any, index: number) => {
+            const seqNo = shot.sequenceNo ?? (index + 1)
+            lines.push(`## 镜头 ${seqNo}`)
+            lines.push('')
+            lines.push('| 字段 | 内容 |')
+            lines.push('|------|------|')
+            lines.push(`| 景别 | ${shot.shotType || '--'} |`)
+            lines.push(`| 运镜 | ${shot.cameraMovement || '--'} |`)
+            lines.push(`| 视角 | ${shot.angle || '--'} |`)
+            lines.push(`| 时长 | ${shot.durationMs ? shot.durationMs + 'ms' : '--'} |`)
+            lines.push('')
+
+            if (shot.dialogue) {
+                lines.push('### 台词/旁白')
+                lines.push('')
+                lines.push(shot.dialogue)
+                lines.push('')
+            }
+            if (shot.visualDesc) {
+                lines.push('### 画面描述')
+                lines.push('')
+                lines.push(shot.visualDesc)
+                lines.push('')
+            }
+            if (shot.image || shot.imageUrl) {
+                lines.push('### 分镜图')
+                lines.push('')
+                lines.push(`![镜头${seqNo}](${getImageUrl(shot.image || shot.imageUrl)})`)
+                lines.push('')
+            }
+
+            lines.push('---')
+            lines.push('')
+        })
+
+        const mdContent = lines.join('\n')
+        const blob = new Blob(['\uFEFF' + mdContent], { type: 'text/markdown;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `分镜列表_${new Date().toISOString().slice(0, 10)}.md`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        MessagePlugin.success(`已导出 ${list.length} 个镜头`)
+    } catch (e) {
+        console.error('导出失败:', e)
+        MessagePlugin.error('导出失败')
+    } finally {
+        exportMdLoading.value = false
+    }
+}
+
+// 导入MD
+const triggerMdImport = () => {
+    mdFileInput.value?.click()
+}
+const handleMdImport = async (event: Event) => {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+
+    importMdLoading.value = true
+    try {
+        const text = await file.text()
+        const parsedShots = parseShotMdContent(text)
+        if (parsedShots.length === 0) {
+            MessagePlugin.warning('未识别到有效的分镜数据')
+            return
+        }
+
+        const confirmResult = await DialogPlugin.confirm({
+            header: '确认导入',
+            body: `检测到 ${parsedShots.length} 个分镜，确认导入到当前项目？`,
+            confirmBtn: '确认导入',
+            cancelBtn: '取消',
+        })
+        if (confirmResult !== true) return
+
+        let successCount = 0
+        let failCount = 0
+        for (const shot of parsedShots) {
+            try {
+                const payload: Record<string, any> = {
+                    projectId: Number(dramaId),
+                    scriptId: currentScriptId.value || undefined,
+                    shotType: shot.shotType || undefined,
+                    cameraMovement: shot.cameraMovement || undefined,
+                    angle: shot.angle || undefined,
+                    durationMs: shot.durationMs || 3000,
+                    dialogue: shot.dialogue || undefined,
+                    action: shot.action || undefined,
+                    visualDesc: shot.visualDesc || undefined,
+                    atmosphere: shot.atmosphere || undefined,
+                    audioPrompt: shot.audioPrompt || undefined,
+                    imageUrl: shot.imageUrl || undefined,
+                    imagePrompt: shot.imagePrompt || undefined,
+                    videoPrompt: shot.videoPrompt || undefined,
+                }
+                const res = await createShots(payload)
+                if (res.code === 0) {
+                    successCount++
+                } else {
+                    failCount++
+                }
+            } catch {
+                failCount++
+            }
+        }
+
+        MessagePlugin.success(`导入完成：成功 ${successCount} 条` + (failCount > 0 ? `，失败 ${failCount} 条` : ''))
+        loadData()
+    } catch (e) {
+        console.error('导入失败:', e)
+        MessagePlugin.error('文件读取失败，请确认是有效的 MD 文件')
+    } finally {
+        importMdLoading.value = false
+        if (input) input.value = ''
+    }
+}
 
 const selectStoryboard = (id: number | string) => {
     currentStoryboardId.value = id

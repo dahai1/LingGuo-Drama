@@ -46,6 +46,10 @@ func NewProvider(cfg Config) Provider {
 		return &DoubaoClient{Config: cfg, client: globalHTTPClient}
 	case "vertex", "gcp":
 		return &VertexClient{Config: cfg, client: globalHTTPClient}
+	case "siliconflow", "silicon":
+		return &SiliconFlowClient{Config: cfg, client: globalHTTPClient}
+	case "bailian", "dashscope":
+		return &BailianClient{Config: cfg, client: globalHTTPClient}
 	case "openai":
 		fallthrough
 	default:

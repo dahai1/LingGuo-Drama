@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"spiritFruit/app/models/async_tasks"
 	"spiritFruit/app/models/characters"
 	"spiritFruit/app/models/projects"
@@ -15,6 +16,7 @@ import (
 	"spiritFruit/app/services"
 	"spiritFruit/pkg/asynq"
 	"spiritFruit/pkg/console"
+	"spiritFruit/pkg/logger"
 	"spiritFruit/pkg/database"
 	"spiritFruit/pkg/openai"
 	"spiritFruit/pkg/response"
@@ -928,11 +930,13 @@ func (ctrl *AiController) TestVideoConfig(c *gin.Context) {
 		return
 	}
 
-	// 智能判断测试时长 (Sora 限制较多，一般测短一点)
-	testDuration := 5
+	// 智能判断测试时长 (海螺1080P仅支持6s, Sora限制较多)
+	testDuration := 6
 	if strings.Contains(strings.ToLower(modelName), "sora") {
 		testDuration = 4
 	}
+	console.Warning(fmt.Sprintf("[测试视频] Provider=%s, Model=%s, Duration=%d, URL=%s", providerName, modelName, testDuration, req.BaseURL))
+	logger.Warn("[测试视频]", zap.String("provider", providerName), zap.String("model", modelName), zap.Int("duration", testDuration), zap.String("url", req.BaseURL))
 
 	// 3. 在本地数据库创建测试任务记录 (让前端去轮询这个内部ID)
 	task := async_tasks.AsyncTask{

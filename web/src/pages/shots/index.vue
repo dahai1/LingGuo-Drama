@@ -92,6 +92,15 @@
                     <template #icon><t-icon name="refresh"></t-icon></template>
                     刷新
                 </t-button>
+                <t-button theme="default" variant="outline" :loading="exportLoading" @click="exportToMarkdown">
+                    <template #icon><t-icon name="file-export"></t-icon></template>
+                    导出MD
+                </t-button>
+                <t-button theme="default" variant="outline" :loading="importLoading" @click="triggerMdImport">
+                    <template #icon><t-icon name="file-import"></t-icon></template>
+                    导入MD
+                </t-button>
+                <input ref="mdFileInput" type="file" accept=".md" style="display:none" @change="handleMdImport" />
             </t-space>
         </div>
 
@@ -536,6 +545,7 @@ import {
     getScriptsSelectList
 } from '@/api/shots'
 import { formatDate, getImageUrl } from '@/utils/format'
+import { parseShotMdContent } from '@/utils/shotMdParser'
 
     defineOptions({
         name: 'ShotsList'
@@ -730,6 +740,9 @@ import { formatDate, getImageUrl } from '@/utils/format'
     const tableRef = ref()
     const loading = ref(false)
     const tableData = ref([])
+    const exportLoading = ref(false)
+    const importLoading = ref(false)
+    const mdFileInput = ref<HTMLInputElement | null>(null)
     const showAllQuery = ref(false)
 
     // 分页
@@ -1289,6 +1302,209 @@ import { formatDate, getImageUrl } from '@/utils/format'
             MessagePlugin.success('数据已刷新')
         })
     }
+
+    // 导出MD
+    const exportToMarkdown = async () => {
+        exportLoading.value = true
+        try {
+            // 拉取所有数据（忽略分页，最大10000条）
+            const params = {
+                page: 1,
+                pageSize: 10000,
+                ...processSearchParams()
+            }
+            const res = await getShotsList(params)
+            if (res.code !== 0) {
+                MessagePlugin.error(res.message || '获取数据失败')
+                return
+            }
+            const list = Array.isArray(res.data) ? res.data : (res.data?.list || [])
+            if (list.length === 0) {
+                MessagePlugin.warning('没有数据可导出')
+                return
+            }
+
+            // 状态映射
+            const statusMap: Record<number, string> = { 0: 'Pending', 1: 'Done', 2: 'Fail' }
+
+            // 构建MD内容
+            const lines: string[] = []
+            lines.push('# 分镜列表')
+            lines.push('')
+            lines.push(`> 导出时间: ${new Date().toLocaleString()}　|　共 ${list.length} 个镜头`)
+            lines.push('')
+            lines.push('---')
+            lines.push('')
+
+            list.forEach((shot: any, index: number) => {
+                const seqNo = shot.sequenceNo ?? `#${index + 1}`
+                const projectTitle = shot.projects?.title || '--'
+                const scriptTitle = shot.scripts?.title || '--'
+
+                lines.push(`## 镜头 ${seqNo}`)
+                lines.push('')
+                lines.push('| 字段 | 内容 |')
+                lines.push('|------|------|')
+                lines.push(`| 短剧项目 | ${projectTitle} |`)
+                lines.push(`| 剧本 | ${scriptTitle} |`)
+                lines.push(`| 景别 | ${shot.shotType || '--'} |`)
+                lines.push(`| 运镜 | ${shot.cameraMovement || '--'} |`)
+                lines.push(`| 视角 | ${shot.angle || '--'} |`)
+                lines.push(`| 时长(ms) | ${shot.durationMs ?? '--'} |`)
+                lines.push(`| 状态 | ${statusMap[shot.status] ?? shot.status ?? '--'} |`)
+                lines.push('')
+
+                if (shot.dialogue) {
+                    lines.push(`### 台词/旁白`)
+                    lines.push('')
+                    lines.push(shot.dialogue)
+                    lines.push('')
+                }
+                if (shot.visualDesc) {
+                    lines.push(`### 画面描述`)
+                    lines.push('')
+                    lines.push(shot.visualDesc)
+                    lines.push('')
+                }
+                if (shot.atmosphere) {
+                    lines.push(`### 氛围/环境描述`)
+                    lines.push('')
+                    lines.push(shot.atmosphere)
+                    lines.push('')
+                }
+                if (shot.audioPrompt) {
+                    lines.push(`### 音效/BGM提示词`)
+                    lines.push('')
+                    lines.push(shot.audioPrompt)
+                    lines.push('')
+                }
+
+                // 图片/视频URL
+                if (shot.imagePrompt) {
+                    lines.push(`### 绘画Prompt图`)
+                    lines.push('')
+                    lines.push(`![imagePrompt](${getImageUrl(shot.imagePrompt)})`)
+                    lines.push('')
+                }
+                if (shot.imageUrl) {
+                    lines.push(`### 分镜图`)
+                    lines.push('')
+                    lines.push(`![imageUrl](${getImageUrl(shot.imageUrl)})`)
+                    lines.push('')
+                }
+                if (shot.videoPrompt) {
+                    lines.push(`### 视频生成Prompt`)
+                    lines.push('')
+                    lines.push(`![videoPrompt](${getImageUrl(shot.videoPrompt)})`)
+                    lines.push('')
+                }
+                if (shot.videoUrl) {
+                    lines.push(`### 最终视频片段`)
+                    lines.push('')
+                    lines.push(`![videoUrl](${getImageUrl(shot.videoUrl)})`)
+                    lines.push('')
+                }
+                if (shot.audioUrl) {
+                    lines.push(`### 配音/音效URL`)
+                    lines.push('')
+                    lines.push(shot.audioUrl)
+                    lines.push('')
+                }
+
+                lines.push('---')
+                lines.push('')
+            })
+
+            const mdContent = lines.join('\n')
+            const blob = new Blob(['\uFEFF' + mdContent], { type: 'text/markdown;charset=utf-8' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            const timestamp = new Date().toISOString().slice(0, 10)
+            a.download = `分镜列表_${timestamp}.md`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+            MessagePlugin.success(`已导出 ${list.length} 个镜头`)
+        } catch (e) {
+            console.error('导出失败:', e)
+            MessagePlugin.error('导出失败')
+        } finally {
+            exportLoading.value = false
+        }
+    }
+
+    // 导入MD
+    const triggerMdImport = () => {
+        mdFileInput.value?.click()
+    }
+    const handleMdImport = async (event: Event) => {
+        const input = event.target as HTMLInputElement
+        const file = input.files?.[0]
+        if (!file) return
+
+        importLoading.value = true
+        try {
+            const text = await file.text()
+            const parsedShots = parseShotMdContent(text)
+            if (parsedShots.length === 0) {
+                MessagePlugin.warning('未识别到有效的分镜数据')
+                return
+            }
+
+            const confirmResult = await DialogPlugin.confirm({
+                header: '确认导入',
+                body: `检测到 ${parsedShots.length} 个分镜，确认导入？\n\n导入后将关联当前选中的项目和剧本。`,
+                confirmBtn: '确认导入',
+                cancelBtn: '取消',
+            })
+            if (confirmResult !== true) return
+
+            let successCount = 0
+            let failCount = 0
+            for (const shot of parsedShots) {
+                try {
+                    const payload: Record<string, any> = {
+                        projectId: searchInfo.projectId || undefined,
+                        scriptId: searchInfo.scriptId || undefined,
+                        sceneId: searchInfo.sceneId || undefined,
+                        shotType: shot.shotType || undefined,
+                        cameraMovement: shot.cameraMovement || undefined,
+                        angle: shot.angle || undefined,
+                        durationMs: shot.durationMs || 3000,
+                        dialogue: shot.dialogue || undefined,
+                        action: shot.action || undefined,
+                        visualDesc: shot.visualDesc || undefined,
+                        atmosphere: shot.atmosphere || undefined,
+                        audioPrompt: shot.audioPrompt || undefined,
+                        imageUrl: shot.imageUrl || undefined,
+                        imagePrompt: shot.imagePrompt || undefined,
+                        videoPrompt: shot.videoPrompt || undefined,
+                    }
+                    const res = await createShots(payload)
+                    if (res.code === 0) {
+                        successCount++
+                    } else {
+                        failCount++
+                    }
+                } catch {
+                    failCount++
+                }
+            }
+
+            MessagePlugin.success(`导入完成：成功 ${successCount} 条` + (failCount > 0 ? `，失败 ${failCount} 条` : ''))
+            getTableData()
+        } catch (e) {
+            console.error('导入失败:', e)
+            MessagePlugin.error('文件读取失败，请确认是有效的 MD 文件')
+        } finally {
+            importLoading.value = false
+            // 清空 input 以便重复选择同一文件
+            if (input) input.value = ''
+        }
+    }
+
     // 新增
     const onCreate = () => {
         formType.value = 'create'

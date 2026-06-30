@@ -73,6 +73,18 @@ func HandleGenerateImage(ctx context.Context, t *asynq.Task) error {
 		VertexKey:        config.GetString("ai.vertex.api_key"),
 		VertexModel:      config.GetString("ai.vertex.model"),
 		VertexImageModel: config.GetString("ai.vertex.image_model"),
+
+		// SiliconFlow (硅基流动) 配置
+		SiliconFlowBaseURL:    config.GetString("ai.siliconflow.base_url"),
+		SiliconFlowKey:        config.GetString("ai.siliconflow.api_key"),
+		SiliconFlowModel:      config.GetString("ai.siliconflow.model"),
+		SiliconFlowImageModel: config.GetString("ai.siliconflow.image_model"),
+
+		// Bailian (阿里百炼) 配置
+		BailianBaseURL:    config.GetString("ai.bailian.base_url"),
+		BailianKey:        config.GetString("ai.bailian.api_key"),
+		BailianModel:      config.GetString("ai.bailian.model"),
+		BailianImageModel: config.GetString("ai.bailian.image_model"),
 	}
 
 	// 2) 尝试从数据库加载优先级最高的 image (图片) 配置
@@ -128,6 +140,22 @@ func HandleGenerateImage(ctx context.Context, t *asynq.Task) error {
 			aiConfig.VertexKey = apiKey
 			if modelName != "" {
 				aiConfig.VertexImageModel = modelName // 赋值给 Vertex 图片模型字段
+			}
+
+		case "siliconflow", "silicon":
+			aiConfig.Provider = "siliconflow"
+			aiConfig.SiliconFlowBaseURL = baseURL
+			aiConfig.SiliconFlowKey = apiKey
+			if modelName != "" {
+				aiConfig.SiliconFlowImageModel = modelName
+			}
+
+		case "bailian", "dashscope":
+			aiConfig.Provider = "bailian"
+			aiConfig.BailianBaseURL = baseURL
+			aiConfig.BailianKey = apiKey
+			if modelName != "" {
+				aiConfig.BailianImageModel = modelName
 			}
 
 		default:

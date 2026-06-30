@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type MinimaxClient struct {
@@ -90,10 +91,25 @@ func (c *MinimaxClient) GenerateVideo(prompt string, opts ...VideoOption) (*Vide
 		opt(options)
 	}
 
+	// MiniMax-Hailuo-02 1080P 仅支持 6s, 强制修正非法值
+	beforeFix := options.Duration
+	if strings.Contains(c.Model, "Hailuo") && options.Resolution == "1080P" {
+		if options.Duration != 6 && options.Duration != 10 {
+			options.Duration = 6
+		}
+	}
+
 	model := c.Model
 	if options.Model != "" {
 		model = options.Model
 	}
+
+	promptPreview := prompt
+	if len(promptPreview) > 80 {
+		promptPreview = promptPreview[:80]
+	}
+	fmt.Printf("[Minimax DEBUG] Model=%s, Resolution=%s, Duration(beforeFix=%d, afterFix=%d), Prompt=%s\n",
+		model, options.Resolution, beforeFix, options.Duration, promptPreview)
 
 	reqBody := MinimaxRequest{
 		Prompt:   prompt,

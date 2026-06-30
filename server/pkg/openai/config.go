@@ -31,4 +31,16 @@ type Config struct {
 	VertexKey        string // API 密钥
 	VertexModel      string // 如 gemini-2.5-flash
 	VertexImageModel string // 如 imagen-3.0-generate-001
+
+	// SiliconFlow (硅基流动) 配置
+	SiliconFlowBaseURL    string
+	SiliconFlowKey        string
+	SiliconFlowModel      string
+	SiliconFlowImageModel string
+
+	// Bailian/DashScope (阿里百炼) 配置
+	BailianBaseURL    string
+	BailianKey        string
+	BailianModel      string
+	BailianImageModel string
 }

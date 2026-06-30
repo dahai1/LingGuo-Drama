@@ -46,6 +46,22 @@ func init() {
 				"model":    config.Env("GEMINI_MODEL", "gemini-pro"),
 			},
 
+			// --- SiliconFlow (硅基流动) 配置 ---
+			"siliconflow": map[string]interface{}{
+				"base_url":    config.Env("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"),
+				"api_key":     config.Env("SILICONFLOW_API_KEY", ""),
+				"model":       config.Env("SILICONFLOW_MODEL", "deepseek-ai/DeepSeek-V3"),
+			"image_model": config.Env("SILICONFLOW_IMAGE_MODEL", "Kwai-Kolors/Kolors"),
+			},
+
+			// --- Bailian (阿里百炼) 配置 ---
+			"bailian": map[string]interface{}{
+				"base_url":    config.Env("BAILIAN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+				"api_key":     config.Env("BAILIAN_API_KEY", ""),
+				"model":       config.Env("BAILIAN_MODEL", "qwen-plus"),
+				"image_model": config.Env("BAILIAN_IMAGE_MODEL", "wanx-v1"),
+			},
+
 			// --- 视频生成大模型配置 ---
 			"video_provider": config.Env("VIDEO_PROVIDER", "getgoapi"),
 

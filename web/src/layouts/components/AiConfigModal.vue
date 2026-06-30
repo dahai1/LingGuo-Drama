@@ -191,11 +191,15 @@ const providerConfigs: Record<string, ProviderConfig[]> = {
         { id: 'getgoapi', name: 'GetGo API', models: ['gemini-3-flash-preview', 'claude-sonnet-4-6', 'doubao-seed-1-8-251228'] },
         { id: 'gemini', name: 'Google Gemini', models: ['gemini-1.5-pro', 'gemini-3-flash-preview'] },
         { id: 'doubao', name: '火山引擎', models: ['doubao-pro-32k', 'doubao-lite-32k'] },
+        { id: 'siliconflow', name: '硅基流动', models: ['deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-72B-Instruct'] },
+        { id: 'bailian', name: '阿里百炼', models: ['qwen-plus', 'qwen-max', 'qwen-turbo'] },
     ],
     image: [
         { id: 'volcengine', name: '火山引擎', models: ['doubao-seedream-4-5-251128', 'doubao-seedream-4-0-250828'] },
         { id: 'getgoapi', name: 'GetGo API', models: ['doubao-seedream-4-5-251128', 'dall-e-3'] },
         { id: 'openai', name: 'OpenAI', models: ['dall-e-3'] },
+        { id: 'siliconflow', name: '硅基流动', models: ['Kwai-Kolors/Kolors', 'Tongyi-MAI/Z-Image-Turbo', 'Tongyi-MAI/Z-Image'] },
+        { id: 'bailian', name: '阿里百炼', models: ['wanx-v1', 'wanx2.0-t2i'] },
     ],
     video: [
         { id: 'volces', name: '火山引擎', models: ['doubao-seedance-1-5-pro-251215'] },
@@ -206,6 +210,7 @@ const providerConfigs: Record<string, ProviderConfig[]> = {
         { id: 'pika', name: 'Pika', models: ['pika'] },
         { id: 'google', name: 'Google Veo', models: ['veo-3.1-fast-generate-001'] },
         { id: 'getgoapi', name: 'GetGo API', models: ['doubao-seedance-1-5-pro-251215', 'sora-2', 'MiniMax-Hailuo-02'] },
+        { id: 'bailian', name: '阿里百炼', models: ['wanx2.0-t2v-advanced', 'wan2.1-t2v-advanced'] },
     ],
 };
 
@@ -224,9 +229,19 @@ const fullEndpointExample = computed(() => {
     if (serviceType === 'text') {
         endpoint = (provider === 'gemini') ? '/v1beta/models/{model}:generateContent' : '/chat/completions';
     } else if (serviceType === 'image') {
-        endpoint = (provider === 'gemini') ? '/v1beta/models/{model}:generateContent' : '/images/generations';
+        if (provider === 'gemini') {
+            endpoint = '/v1beta/models/{model}:generateContent';
+        } else if (provider === 'bailian') {
+            endpoint = '/api/v1/services/aigc/image-generation/generation';
+        } else {
+            endpoint = '/images/generations';
+        }
     } else if (serviceType === 'video') {
-        endpoint = '/videos';
+        if (provider === 'bailian') {
+            endpoint = '/api/v1/services/aigc/video-generation/generation';
+        } else {
+            endpoint = '/videos';
+        }
     }
     return baseUrl + endpoint;
 });
@@ -256,7 +271,7 @@ const handleTabChange = (value: AIServiceType) => {
 };
 
 const generateConfigName = (provider: string, serviceType: AIServiceType) => {
-    const providerNames: Record<string, string> = { getgoapi: 'GetGo', openai: 'OpenAI', gemini: 'Gemini', doubao: 'Volc', volces: 'Volc', volcengine: 'Volc' };
+    const providerNames: Record<string, string> = { getgoapi: 'GetGo', openai: 'OpenAI', gemini: 'Gemini', doubao: 'Volc', volces: 'Volc', volcengine: 'Volc', siliconflow: 'SiliconFlow', bailian: 'Bailian' };
     const serviceNames: Record<AIServiceType, string> = { text: '文本', image: '图片', video: '视频' };
     const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     return `${providerNames[provider] || provider}-${serviceNames[serviceType] || serviceType}-${randomNum}`;
@@ -287,7 +302,7 @@ const handleEdit = (config: any) => {
     dialogVisible.value = true;
 };
 
-// 🔴 已在此处完善所有服务类型及提供商的自动化切 URL 逻辑
+// 🔴 已在此处完善所有服务类型及提供商的自动化切 URL + Key 逻辑
 const handleProviderChange = () => {
     form.model = [];
 
@@ -297,11 +312,15 @@ const handleProviderChange = () => {
             getgoapi: 'http://api.lingguoai.com/v1',
             gemini: 'https://generativelanguage.googleapis.com/v1beta',
             doubao: 'https://ark.cn-beijing.volces.com/api/v3',
+            siliconflow: 'https://api.siliconflow.cn/v1',
+            bailian: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         },
         image: {
             volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
             getgoapi: 'http://api.lingguoai.com/v1',
             openai: 'https://api.openai.com/v1',
+            siliconflow: 'https://api.siliconflow.cn/v1',
+            bailian: 'https://dashscope.aliyuncs.com',
         },
         video: {
             volces: 'https://ark.cn-beijing.volces.com/api/v3',
@@ -312,7 +331,15 @@ const handleProviderChange = () => {
             pika: 'https://api.pika.art/v1',
             google: 'https://generativelanguage.googleapis.com/v1beta',
             getgoapi: 'http://api.lingguoai.com/v1',
+            siliconflow: 'https://api.siliconflow.cn/v1',
+            bailian: 'https://dashscope.aliyuncs.com',
         }
+    };
+
+    const defaultApiKeys: Record<string, string> = {
+        siliconflow: 'sk-mvqofmxsqcqukijckhhwvidwmwgnabyjgrvpujubefwwqeuw',
+        minimax: 'sk-api-mPprkWZBXEHZGHOgTBWnID2PvunOGgqsDphc8nnA0sRCzq7SjRABYrrQe73hsj7CZfUdwDYUk1Qi_xcPHOeHlh2tn57MoK6NegoHxo6VwJA5UxMYUfzGWFc',
+        bailian: '',
     };
 
     const currentServiceType = form.service_type as AIServiceType;
@@ -320,6 +347,11 @@ const handleProviderChange = () => {
         form.base_url = defaultUrls[currentServiceType][form.provider];
     } else {
         form.base_url = '';
+    }
+
+    // 自动回填 API Key
+    if (!isEdit.value && defaultApiKeys[form.provider] !== undefined) {
+        form.api_key = defaultApiKeys[form.provider];
     }
 
     if (!isEdit.value) {

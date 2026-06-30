@@ -149,6 +149,10 @@ func NewClient(provider, baseURL, apiKey, model, endpoint, queryEndpoint string)
 		return NewVertexVideoClient(baseURL, apiKey, model), nil
 	case "getgoapi":
 		return NewGetGoAPIClient(baseURL, apiKey, model, endpoint, queryEndpoint), nil
+	case "siliconflow", "silicon":
+		return NewOpenAISoraClient(baseURL, apiKey, model), nil
+	case "bailian", "dashscope":
+		return NewBailianVideoClient(baseURL, apiKey, model), nil
 	default:
 		return nil, fmt.Errorf("unsupported video provider: %s", provider)
 	}

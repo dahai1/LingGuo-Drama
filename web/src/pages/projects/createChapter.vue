@@ -247,7 +247,18 @@
                         </div>
 
                         <div class="shots-panel" :class="{ 'full-width': sceneList.length === 0 }">
-                            <div class="panel-header" v-if="sceneList.length > 0">分镜列表 ({{ shotList.length }})</div>
+                            <div class="panel-header" v-if="sceneList.length > 0">
+                                分镜列表 ({{ shotList.length }})
+                                <t-space :size="4" style="margin-left:8px">
+                                    <t-button theme="default" variant="outline" size="small" :loading="exportMdLoading" @click="exportStoryboardsToMd">
+                                        <template #icon><t-icon name="file-export" /></template>导出MD
+                                    </t-button>
+                                    <t-button theme="default" variant="outline" size="small" :loading="importMdLoading" @click="triggerMdImport">
+                                        <template #icon><t-icon name="file-import" /></template>导入MD
+                                    </t-button>
+                                </t-space>
+                                <input ref="mdFileInput" type="file" accept=".md" style="display:none" @change="handleMdImport" />
+                            </div>
 
                             <div v-if="shotList.length > 0">
                                 <t-table :data="shotList" :columns="shotColumns" row-key="id" stripe hover
@@ -451,6 +462,7 @@ import { updateShots, getShotsList, createShots, deleteShots } from '@/api/shots
 import { getAssetsList } from '@/api/assets'
 import { generateShotsTask, findTasks, generateScriptTask, extractScenesTask, generateCharactersTask, batchGenerateCharacterImagesTask, batchGenerateSceneImagesTask, generateSceneImageTask } from '@/api/tasks'
 import { getImageUrl } from '@/utils/format'
+import { parseShotMdContent } from '@/utils/shotMdParser'
 
 const route = useRoute()
 const router = useRouter()
@@ -464,6 +476,9 @@ const currentScriptNumber = ref(Number(route.params.episodeNumber) || 1)
 const characterList = ref<any[]>([])
 const sceneList = ref<any[]>([])
 const shotList = ref<any[]>([])
+const exportMdLoading = ref(false)
+const importMdLoading = ref(false)
+const mdFileInput = ref<HTMLInputElement | null>(null)
 
 // 编辑器 & 任务状态
 const showScriptInput = ref(false)
@@ -726,6 +741,152 @@ const openAddCharacterDialog = () => { isEditMode.value = false; newCharacter.va
 const openEditCharacterDialog = (char: any) => { isEditMode.value = true; newCharacter.value = { ...char }; if (char.avatarUrl) characterFileList.value = [{ url: getImageUrl(char.avatarUrl), name: '角色图' }]; else characterFileList.value = []; addCharacterDialogVisible.value = true }
 const handleCharacterSubmit = async () => { saving.value = true; try { let res; const payload = { projectId: project.value.id, ...newCharacter.value }; if (isEditMode.value) res = await updateCharacters(newCharacter.value.id, payload); else res = await createCharacters(payload); if (res.code === 0) { addCharacterDialogVisible.value = false; MessagePlugin.success(isEditMode.value ? '更新成功' : '添加成功'); loadCharacters() } else { MessagePlugin.error(res.message || '操作失败') } } catch { MessagePlugin.error('网络请求失败') } finally { saving.value = false } }
 const deleteCharacter = async (char: any) => { try { const res = await deleteCharacters(char.id); if (res.code === 0) { MessagePlugin.success('删除成功'); loadCharacters() } else { MessagePlugin.error('删除失败') } } catch { MessagePlugin.error('删除请求失败') } }
+
+// 导出分镜列表为MD
+const exportStoryboardsToMd = () => {
+    const list = shotList.value
+    if (!list || list.length === 0) {
+        MessagePlugin.warning('没有分镜数据可导出')
+        return
+    }
+    exportMdLoading.value = true
+    try {
+        const lines: string[] = []
+        const projectName = project.value?.title || '--'
+        lines.push(`# 分镜列表 - ${projectName}`)
+        lines.push('')
+        lines.push(`> 导出时间: ${new Date().toLocaleString()}　|　共 ${list.length} 个镜头`)
+        lines.push('')
+        lines.push('---')
+        lines.push('')
+
+        list.forEach((shot: any, index: number) => {
+            const seqNo = shot.sequenceNo ?? (index + 1)
+            lines.push(`## 镜头 ${seqNo}`)
+            lines.push('')
+            lines.push('| 字段 | 内容 |')
+            lines.push('|------|------|')
+            lines.push(`| 景别 | ${shot.shotType || '--'} |`)
+            lines.push(`| 运镜 | ${shot.cameraMovement || '--'} |`)
+            lines.push(`| 视角 | ${shot.angle || '--'} |`)
+            lines.push(`| 时长 | ${shot.durationMs ? shot.durationMs + 'ms' : '--'} |`)
+            lines.push('')
+
+            if (shot.action) {
+                lines.push('### 动作')
+                lines.push('')
+                lines.push(shot.action)
+                lines.push('')
+            }
+            if (shot.dialogue) {
+                lines.push('### 台词/旁白')
+                lines.push('')
+                lines.push(shot.dialogue)
+                lines.push('')
+            }
+            if (shot.visualDesc) {
+                lines.push('### 画面描述')
+                lines.push('')
+                lines.push(shot.visualDesc)
+                lines.push('')
+            }
+            if (shot.image || shot.imageUrl) {
+                lines.push('### 分镜图')
+                lines.push('')
+                lines.push(`![镜头${seqNo}](${getImageUrl(shot.image || shot.imageUrl)})`)
+                lines.push('')
+            }
+
+            lines.push('---')
+            lines.push('')
+        })
+
+        const mdContent = lines.join('\n')
+        const blob = new Blob(['\uFEFF' + mdContent], { type: 'text/markdown;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `分镜列表_${new Date().toISOString().slice(0, 10)}.md`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        MessagePlugin.success(`已导出 ${list.length} 个镜头`)
+    } catch (e) {
+        console.error('导出失败:', e)
+        MessagePlugin.error('导出失败')
+    } finally {
+        exportMdLoading.value = false
+    }
+}
+
+// 导入MD
+const triggerMdImport = () => {
+    mdFileInput.value?.click()
+}
+const handleMdImport = async (event: Event) => {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+
+    importMdLoading.value = true
+    try {
+        const text = await file.text()
+        const parsedShots = parseShotMdContent(text)
+        if (parsedShots.length === 0) {
+            MessagePlugin.warning('未识别到有效的分镜数据')
+            return
+        }
+
+        const confirmResult = await DialogPlugin.confirm({
+            header: '确认导入',
+            body: `检测到 ${parsedShots.length} 个分镜，确认导入到当前项目？`,
+            confirmBtn: '确认导入',
+            cancelBtn: '取消',
+        })
+        if (confirmResult !== true) return
+
+        let successCount = 0
+        let failCount = 0
+        for (const shot of parsedShots) {
+            try {
+                const payload: Record<string, any> = {
+                    projectId: project.value.id || undefined,
+                    scriptId: currentScriptData.value?.id || undefined,
+                    shotType: shot.shotType || undefined,
+                    cameraMovement: shot.cameraMovement || undefined,
+                    angle: shot.angle || undefined,
+                    durationMs: shot.durationMs || 3000,
+                    dialogue: shot.dialogue || undefined,
+                    action: shot.action || undefined,
+                    visualDesc: shot.visualDesc || undefined,
+                    atmosphere: shot.atmosphere || undefined,
+                    audioPrompt: shot.audioPrompt || undefined,
+                    imageUrl: shot.imageUrl || undefined,
+                    imagePrompt: shot.imagePrompt || undefined,
+                    videoPrompt: shot.videoPrompt || undefined,
+                }
+                const res = await createShots(payload)
+                if (res.code === 0) {
+                    successCount++
+                } else {
+                    failCount++
+                }
+            } catch {
+                failCount++
+            }
+        }
+
+        MessagePlugin.success(`导入完成：成功 ${successCount} 条` + (failCount > 0 ? `，失败 ${failCount} 条` : ''))
+        loadShots()
+    } catch (e) {
+        console.error('导入失败:', e)
+        MessagePlugin.error('文件读取失败，请确认是有效的 MD 文件')
+    } finally {
+        importMdLoading.value = false
+        if (input) input.value = ''
+    }
+}
 
 const handleUploadSuccess = (ctx: any, isReupload: boolean, type: 'character' | 'scene') => {
     uploading.value = false; const response = ctx.response; if (response?.code === 0 || response?.code === 200) { const responseData = response.data; let fileUrl = responseData.file_url || responseData.url; if (fileUrl && fileUrl.startsWith('/')) fileUrl = import.meta.env.VITE_API_URL.replace(/\/admin\/v1$/, '').replace(/\/v1$/, '') + fileUrl; if (type === 'character') { newCharacter.value.avatarUrl = fileUrl; characterFileList.value = [{ url: fileUrl, name: '角色图' }] } else { newScene.value.imageUrl = fileUrl; sceneFileList.value = [{ url: fileUrl, name: '场景图' }] } MessagePlugin.success('上传成功') } else { MessagePlugin.error(response?.msg || '上传失败') }
